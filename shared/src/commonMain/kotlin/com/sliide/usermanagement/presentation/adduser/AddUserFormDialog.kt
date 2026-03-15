@@ -26,7 +26,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.runtime.remember
 import com.sliide.usermanagement.domain.model.CreateUserRequest
 import com.sliide.usermanagement.domain.model.Gender
 import com.sliide.usermanagement.domain.validation.FieldError
@@ -50,7 +50,7 @@ const val TAG_ADD_USER_SUBMIT  = "add_user_submit"
 fun AddUserFormDialog(
     onDismiss: () -> Unit,
     onSubmit : (CreateUserRequest) -> Unit,
-    viewModel: AddUserFormViewModel = viewModel { AddUserFormViewModel() }
+    viewModel: AddUserFormViewModel = remember { AddUserFormViewModel() }
 ) {
     val formState by viewModel.formState.collectAsStateWithLifecycle()
 
