@@ -115,11 +115,17 @@ fun UserListPane(
                         items = state.users,
                         key   = { _, user -> user.id }
                     ) { index, user ->
+                        // remember(user.id) ensures the lambda reference is
+                        // stable across recompositions of the parent scope.
+                        // Without this, a new lambda instance on every recompose
+                        // would prevent Compose from skipping unchanged items
+                        // even after User gains @Immutable stability.
+                        val onClick = remember(user.id) { { onUserClick(user.id) } }
                         AnimatedUserListItem(
                             user       = user,
                             index      = index,
                             isSelected = user.id == selectedUserId,
-                            onClick    = { onUserClick(user.id) }
+                            onClick    = onClick
                         )
                         HorizontalDivider()
                     }

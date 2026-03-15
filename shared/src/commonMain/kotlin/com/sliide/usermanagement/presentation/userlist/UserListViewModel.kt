@@ -7,10 +7,10 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class UserListViewModel(
@@ -24,23 +24,22 @@ class UserListViewModel(
     val effects = _effects.receiveAsFlow()
 
     init {
-        // DB is the source of truth; the stream emits on every write.
-        getUsersUseCase.usersStream
-            .onEach { users -> _state.update { it.copy(users = users) } }
-            .launchIn(viewModelScope)
-
-        // Pagination loading/error flags live in the repository state.
-        getUsersUseCase.paginationState
-            .onEach { pagination ->
-                _state.update {
-                    it.copy(
-                        isLoading    = pagination.isLoading,
-                        isLoadingMore = pagination.isLoadingMore,
-                        canLoadMore  = pagination.hasMore,
-                        error        = pagination.error
-                    )
-                }
-            }
+        // Combine users and pagination into a single state update so that a
+        // page-load — which emits on both streams simultaneously — produces one
+        // recomposition instead of two.
+        combine(
+            getUsersUseCase.usersStream,
+            getUsersUseCase.paginationState
+        ) { users, pagination ->
+            UserListState(
+                users         = users,
+                isLoading     = pagination.isLoading,
+                isLoadingMore = pagination.isLoadingMore,
+                canLoadMore   = pagination.hasMore,
+                error         = pagination.error
+            )
+        }
+            .onEach { _state.value = it }
             .launchIn(viewModelScope)
 
         // Seed the first page on cold start.

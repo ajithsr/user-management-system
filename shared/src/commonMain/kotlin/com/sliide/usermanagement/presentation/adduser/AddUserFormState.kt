@@ -1,5 +1,6 @@
 package com.sliide.usermanagement.presentation.adduser
 
+import androidx.compose.runtime.Stable
 import com.sliide.usermanagement.domain.validation.AddUserFieldErrors
 
 /**
@@ -18,7 +19,14 @@ import com.sliide.usermanagement.domain.validation.AddUserFieldErrors
  * ── Submit button state ───────────────────────────────────────────────────────
  * [canSubmit] is based on [errors] (not [visibleErrors]), so the button becomes
  * enabled the moment all fields are valid, even if some errors are still hidden.
+ *
+ * ── Stability ────────────────────────────────────────────────────────────────
+ * @Stable is required because [touched] is a [Set], and [Set] is not annotated
+ * as stable in the Compose runtime. Without it, every keystroke recompose would
+ * force all six OutlinedTextField children to recompose regardless of whether
+ * their specific field value changed.
  */
+@Stable
 data class AddUserFormState(
     val input           : AddUserFormInput   = AddUserFormInput(),
     val errors          : AddUserFieldErrors = AddUserFieldErrors(),

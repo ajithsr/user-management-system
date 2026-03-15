@@ -92,6 +92,13 @@ android {
     }
 }
 
+composeCompiler {
+    // Teach the Compose compiler that kotlinx.datetime.Instant is immutable.
+    // Without this, any data class containing an Instant field is inferred as
+    // unstable, disabling LazyColumn item-skip for User and UserFeedItem.
+    stabilityConfigurationFile = project.file("compose_compiler_config.conf")
+}
+
 sqldelight {
     databases {
         create("UserDatabase") {

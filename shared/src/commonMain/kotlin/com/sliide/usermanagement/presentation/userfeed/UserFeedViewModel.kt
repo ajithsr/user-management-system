@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -74,6 +75,11 @@ class UserFeedViewModel(
         combine(getUsersUseCase.usersStream, _loadPhase, tickFlow) { users, phase, _ ->
             buildState(users, phase, clock.now())
         }
+            // Drop tick-triggered rebuilds where no createdAt string actually
+            // changed (all items are still "X minutes ago"). StateFlow already
+            // deduplicates equal values, but distinctUntilChanged short-circuits
+            // the downstream onEach before reaching the StateFlow assignment.
+            .distinctUntilChanged()
             .onEach { _state.value = it }
             .launchIn(viewModelScope)
 
