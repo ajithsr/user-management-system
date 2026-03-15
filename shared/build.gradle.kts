@@ -58,6 +58,12 @@ kotlin {
             implementation(libs.ktor.client.mock)
         }
 
+        androidInstrumentedTest.dependencies {
+            @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
+            implementation(compose.uiTest)
+            implementation(libs.androidx.test.runner)
+        }
+
         androidMain.dependencies {
             implementation(libs.ktor.client.android)
             implementation(libs.sqldelight.android.driver)
@@ -77,6 +83,7 @@ android {
 
     defaultConfig {
         minSdk = libs.versions.android.minSdk.get().toInt()
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     compileOptions {
