@@ -1,0 +1,107 @@
+CREATE TABLE UserEntity (
+    id              INTEGER NOT NULL PRIMARY KEY,
+    firstName       TEXT    NOT NULL,
+    lastName        TEXT    NOT NULL,
+    username        TEXT    NOT NULL,
+    email           TEXT    NOT NULL,
+    phone           TEXT    NOT NULL,
+    avatarUrl       TEXT    NOT NULL,
+    age             INTEGER NOT NULL,
+    gender          TEXT    NOT NULL,
+    role            TEXT    NOT NULL,
+    street          TEXT    NOT NULL,
+    city            TEXT    NOT NULL,
+    state           TEXT    NOT NULL,
+    country         TEXT    NOT NULL,
+    postalCode      TEXT    NOT NULL,
+    company         TEXT    NOT NULL,
+    department      TEXT    NOT NULL,
+    jobTitle        TEXT    NOT NULL,
+    isPendingCreate INTEGER NOT NULL DEFAULT 0,
+    isDeleted       INTEGER NOT NULL DEFAULT 0,
+    createdAt       INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_visible
+    ON UserEntity(isDeleted, id);
+
+CREATE INDEX IF NOT EXISTS idx_users_pending
+    ON UserEntity(isPendingCreate, isDeleted);
+
+selectAll:
+SELECT * FROM UserEntity
+WHERE isDeleted = 0
+ORDER BY id ASC;
+
+selectById:
+SELECT * FROM UserEntity
+WHERE id = :id AND isDeleted = 0;
+
+selectOneById:
+SELECT * FROM UserEntity
+WHERE id = :id
+LIMIT 1;
+
+selectPendingUsers:
+SELECT * FROM UserEntity
+WHERE isPendingCreate = 1;
+
+insertOrIgnore:
+INSERT OR IGNORE INTO UserEntity(
+    id, firstName, lastName, username, email, phone, avatarUrl,
+    age, gender, role, street, city, state, country, postalCode,
+    company, department, jobTitle, isPendingCreate, isDeleted, createdAt
+)
+VALUES (
+    :id, :firstName, :lastName, :username, :email, :phone, :avatarUrl,
+    :age, :gender, :role, :street, :city, :state, :country, :postalCode,
+    :company, :department, :jobTitle, :isPendingCreate, :isDeleted, :createdAt
+);
+
+updateUser:
+UPDATE UserEntity
+SET
+    firstName  = :firstName,
+    lastName   = :lastName,
+    username   = :username,
+    email      = :email,
+    phone      = :phone,
+    avatarUrl  = :avatarUrl,
+    age        = :age,
+    gender     = :gender,
+    role       = :role,
+    street     = :street,
+    city       = :city,
+    state      = :state,
+    country    = :country,
+    postalCode = :postalCode,
+    company    = :company,
+    department = :department,
+    jobTitle   = :jobTitle
+WHERE id = :id
+  AND isPendingCreate = 0;
+
+confirmPendingUser:
+UPDATE UserEntity
+SET id = :realId, isPendingCreate = 0
+WHERE id = :tempId;
+
+softDeleteUser:
+UPDATE UserEntity SET isDeleted = 1 WHERE id = :id;
+
+undoDeleteUser:
+UPDATE UserEntity SET isDeleted = 0 WHERE id = :id;
+
+hardDeleteUser:
+DELETE FROM UserEntity WHERE id = :id;
+
+deleteAllApiUsers:
+DELETE FROM UserEntity
+WHERE isPendingCreate = 0
+  AND isDeleted = 0;
+
+countAll:
+SELECT COUNT(*) FROM UserEntity;
+
+deleteAll:
+DELETE FROM UserEntity;

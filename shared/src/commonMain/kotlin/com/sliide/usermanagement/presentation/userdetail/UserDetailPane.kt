@@ -26,7 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.collectAsState
 import coil3.compose.AsyncImage
 import com.sliide.usermanagement.domain.model.Gender
 import com.sliide.usermanagement.domain.model.User
@@ -52,7 +52,7 @@ fun UserDetailPane(
         parameters = { parametersOf(userId) }
     )
 ) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
+    val state by viewModel.state.collectAsState()
 
     Box(modifier = modifier) {
         when {

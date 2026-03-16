@@ -31,7 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.flow.Flow
 import org.koin.compose.viewmodel.koinViewModel
 import com.sliide.usermanagement.presentation.adduser.AddUserFormDialog
@@ -58,7 +58,7 @@ fun UserFeedScreen(
     modifier          : Modifier = Modifier,
     viewModel         : UserFeedViewModel = koinViewModel()
 ) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
+    val state by viewModel.state.collectAsState()
     UserFeedScreen(
         state              = state,
         effects            = viewModel.effects,

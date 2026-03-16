@@ -1,11 +1,27 @@
 plugins {
+    alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeCompiler)
+}
+
+kotlin {
+    androidTarget {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
+    }
 }
 
 android {
     namespace = "com.sliide.usermanagement.android"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
+
+    sourceSets["main"].apply {
+        manifest.srcFile("src/androidMain/AndroidManifest.xml")
+        res.srcDirs("src/androidMain/res")
+        resources.srcDirs("src/androidMain/resources")
+        java.srcDirs("src/androidMain/kotlin")
+    }
 
     defaultConfig {
         applicationId = "com.sliide.usermanagement.android"

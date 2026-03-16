@@ -8,14 +8,18 @@ plugins {
 }
 
 kotlin {
-    androidTarget()
+    androidTarget {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
+    }
 
     listOf(
         iosX64(),
         iosArm64(),
         iosSimulatorArm64()
-    ).forEach { iosTarget ->
-        iosTarget.binaries.framework {
+    ).forEach {
+        it.binaries.framework {
             baseName = "Shared"
             isStatic = true
         }
@@ -99,10 +103,23 @@ composeCompiler {
     stabilityConfigurationFile = project.file("compose_compiler_config.conf")
 }
 
+// androidx.lifecycle:lifecycle-runtime-compose has no iOS KMP artifacts.
+// Substitute it everywhere with the JetBrains fork, which ships iOS variants
+// and is already bundled transitively by Compose Multiplatform 1.7.3.
+// This also covers the transitive pulls from lifecycle-viewmodel-iosarm64,
+// lifecycle-common-iosarm64, and lifecycle-runtime-iosarm64.
+configurations.configureEach {
+    resolutionStrategy.dependencySubstitution {
+        substitute(module("androidx.lifecycle:lifecycle-runtime-compose"))
+            .using(module("org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose:2.8.4"))
+    }
+}
+
 sqldelight {
     databases {
         create("UserDatabase") {
             packageName.set("com.sliide.usermanagement.data.local.db")
+            dialect("app.cash.sqldelight:sqlite-3-38-dialect:2.1.0")
         }
     }
 }

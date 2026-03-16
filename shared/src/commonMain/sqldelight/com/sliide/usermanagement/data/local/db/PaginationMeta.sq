@@ -1,0 +1,17 @@
+-- PaginationMeta.sq
+
+CREATE TABLE PaginationMeta (
+    metaKey   TEXT    NOT NULL PRIMARY KEY,
+    metaValue INTEGER NOT NULL
+);
+
+upsertMeta:
+INSERT OR REPLACE INTO PaginationMeta(metaKey, metaValue)
+VALUES (:metaKey, :metaValue);
+
+selectMeta:
+SELECT metaValue FROM PaginationMeta
+WHERE metaKey = :metaKey;
+
+clearMeta:
+DELETE FROM PaginationMeta;

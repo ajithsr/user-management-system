@@ -25,8 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.collectAsState
 import com.sliide.usermanagement.domain.model.CreateUserRequest
 import com.sliide.usermanagement.domain.model.Gender
 import com.sliide.usermanagement.domain.validation.FieldError
@@ -52,7 +51,7 @@ fun AddUserFormDialog(
     onSubmit : (CreateUserRequest) -> Unit,
     viewModel: AddUserFormViewModel = remember { AddUserFormViewModel() }
 ) {
-    val formState by viewModel.formState.collectAsStateWithLifecycle()
+    val formState by viewModel.formState.collectAsState()
 
     LaunchedEffect(Unit) {
         viewModel.effects.collect { effect ->

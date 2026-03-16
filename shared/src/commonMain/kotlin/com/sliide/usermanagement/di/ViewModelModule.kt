@@ -4,6 +4,7 @@ import com.sliide.usermanagement.presentation.adduser.AddUserFormViewModel
 import com.sliide.usermanagement.presentation.userdetail.UserDetailViewModel
 import com.sliide.usermanagement.presentation.userfeed.UserFeedViewModel
 import com.sliide.usermanagement.presentation.userlist.UserListViewModel
+import org.koin.core.module.dsl.viewModel
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
 

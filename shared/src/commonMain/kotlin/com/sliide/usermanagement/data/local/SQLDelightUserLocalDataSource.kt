@@ -118,6 +118,7 @@ class SQLDelightUserLocalDataSource(database: UserDatabase) : UserLocalDataSourc
             isDeleted       = 0L,
             createdAt       = user.createdAt
         )
+        Unit
     }
 
     /**
@@ -127,6 +128,7 @@ class SQLDelightUserLocalDataSource(database: UserDatabase) : UserLocalDataSourc
     override suspend fun confirmPendingUser(tempId: Long, realId: Long) =
         withContext(Dispatchers.IO) {
             userQueries.confirmPendingUser(realId = realId, tempId = tempId)
+            Unit
         }
 
     override suspend fun getOneById(id: Long): UserEntity? = withContext(Dispatchers.IO) {
@@ -136,15 +138,15 @@ class SQLDelightUserLocalDataSource(database: UserDatabase) : UserLocalDataSourc
     // ── Soft delete / Undo / Hard delete ─────────────────────────────────────
 
     override suspend fun softDeleteUser(id: Long) = withContext(Dispatchers.IO) {
-        userQueries.softDeleteUser(id)
+        userQueries.softDeleteUser(id); Unit
     }
 
     override suspend fun undoDeleteUser(id: Long) = withContext(Dispatchers.IO) {
-        userQueries.undoDeleteUser(id)
+        userQueries.undoDeleteUser(id); Unit
     }
 
     override suspend fun hardDeleteUser(id: Long) = withContext(Dispatchers.IO) {
-        userQueries.hardDeleteUser(id)
+        userQueries.hardDeleteUser(id); Unit
     }
 
     // ── Optimistic-create recovery ────────────────────────────────────────────
@@ -156,11 +158,11 @@ class SQLDelightUserLocalDataSource(database: UserDatabase) : UserLocalDataSourc
     // ── Refresh support ──────────────────────────────────────────────────────
 
     override suspend fun deleteAllApiUsers() = withContext(Dispatchers.IO) {
-        userQueries.deleteAllApiUsers()
+        userQueries.deleteAllApiUsers(); Unit
     }
 
     override suspend fun deleteAll() = withContext(Dispatchers.IO) {
-        userQueries.deleteAll()
+        userQueries.deleteAll(); Unit
     }
 
     override suspend fun countAll(): Long = withContext(Dispatchers.IO) {
@@ -174,7 +176,7 @@ class SQLDelightUserLocalDataSource(database: UserDatabase) : UserLocalDataSourc
     }
 
     override suspend fun saveSkip(skip: Int) = withContext(Dispatchers.IO) {
-        metaQueries.upsertMeta("skip", skip.toLong())
+        metaQueries.upsertMeta("skip", skip.toLong()); Unit
     }
 
     override suspend fun getCachedTotal(): Int? = withContext(Dispatchers.IO) {
@@ -182,10 +184,10 @@ class SQLDelightUserLocalDataSource(database: UserDatabase) : UserLocalDataSourc
     }
 
     override suspend fun saveTotal(total: Int) = withContext(Dispatchers.IO) {
-        metaQueries.upsertMeta("total", total.toLong())
+        metaQueries.upsertMeta("total", total.toLong()); Unit
     }
 
     override suspend fun clearMeta() = withContext(Dispatchers.IO) {
-        metaQueries.clearMeta()
+        metaQueries.clearMeta(); Unit
     }
 }

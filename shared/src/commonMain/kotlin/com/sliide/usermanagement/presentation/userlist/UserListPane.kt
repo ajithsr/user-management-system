@@ -35,7 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.collectAsState
 import coil3.compose.AsyncImage
 import com.sliide.usermanagement.domain.model.User
 import com.sliide.usermanagement.presentation.components.FullScreenErrorView
@@ -68,7 +68,7 @@ fun UserListPane(
     modifier: Modifier = Modifier,
     viewModel: UserListViewModel = koinViewModel()
 ) {
-    val state     by viewModel.state.collectAsStateWithLifecycle()
+    val state     by viewModel.state.collectAsState()
     val listState  = rememberLazyListState()
 
     // ── Infinite scroll trigger ───────────────────────────────────────────────
