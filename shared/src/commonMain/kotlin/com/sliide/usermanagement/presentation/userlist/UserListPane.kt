@@ -1,11 +1,8 @@
 package com.sliide.usermanagement.presentation.userlist
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,13 +10,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -31,17 +27,15 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.collectAsState
 import coil3.compose.AsyncImage
 import com.sliide.usermanagement.domain.model.User
 import com.sliide.usermanagement.presentation.components.FullScreenErrorView
@@ -49,23 +43,14 @@ import com.sliide.usermanagement.presentation.components.ShimmerUserList
 import org.koin.compose.viewmodel.koinViewModel
 
 /**
- * Stateful list pane. Manages its own [UserListViewModel]; the caller
- * only receives click callbacks and can optionally highlight a selected row.
- *
- * Used in two places:
- *  - [UserListScreen] — wraps this in a Scaffold for compact / single-pane.
- *  - [AdaptiveTwoPaneScreen] — embeds this directly in the left pane.
- *
- * No [Scaffold] or [TopAppBar] inside — those belong to the caller so that
- * insets are applied exactly once per layout.
+ * Stateful list pane.
  *
  * Loading states
  * --------------
- * • `isLoading && users.isEmpty()` → [ShimmerUserList] skeleton (8 rows).
+ * • `users.isEmpty && (isLoading || isLoadingMore)` → full-screen [ShimmerUserList].
  * • `error != null && users.isEmpty()` → [FullScreenErrorView] with Retry.
- * • `error != null && users.isNotEmpty()` → inline Snackbar (stale data visible).
- * • `isLoadingMore` → spinner appended after last real item.
- * • Each newly-arrived item fades + slides in via [AnimatedVisibility].
+ * • `isLoadingMore` while users non-empty → list stays fully visible; a slim
+ *   [PaginationFooter] spinner appears below the last row — no blank area, no seam.
  */
 @Composable
 fun UserListPane(
@@ -74,9 +59,9 @@ fun UserListPane(
     modifier: Modifier = Modifier,
     viewModel: UserListViewModel = koinViewModel()
 ) {
-    val state          by viewModel.state.collectAsState()
-    val listState       = rememberLazyListState()
-    val snackbarHost    = remember { SnackbarHostState() }
+    val state        by viewModel.state.collectAsState()
+    val listState     = rememberLazyListState()
+    val snackbarHost  = remember { SnackbarHostState() }
 
     // ── Effect handler ────────────────────────────────────────────────────────
     LaunchedEffect(Unit) {
@@ -85,9 +70,9 @@ fun UserListPane(
                 is UserListEffect.NavigateToDetail -> { /* handled by onUserClick caller */ }
                 is UserListEffect.ShowUndoDelete -> {
                     val result = snackbarHost.showSnackbar(
-                        message          = "${effect.userName} deleted",
-                        actionLabel      = "Undo",
-                        duration         = SnackbarDuration.Long,
+                        message           = "${effect.userName} deleted",
+                        actionLabel       = "Undo",
+                        duration          = SnackbarDuration.Long,
                         withDismissAction = true
                     )
                     if (result == SnackbarResult.ActionPerformed) {
@@ -120,7 +105,7 @@ fun UserListPane(
     Box(modifier = modifier) {
         when {
             // ── 1. First-load shimmer ─────────────────────────────────────────
-            state.isLoading && state.users.isEmpty() -> {
+            state.users.isEmpty() && (state.isLoading || state.isLoadingMore) -> {
                 ShimmerUserList(
                     count    = 8,
                     modifier = Modifier.fillMaxSize()
@@ -136,54 +121,47 @@ fun UserListPane(
                 )
             }
 
-            // ── 3. Normal list (with optional stale-data error snackbar) ──────
+            // ── 3. Normal list ────────────────────────────────────────────────
             else -> {
                 LazyColumn(
-                    state          = listState,
-                    modifier       = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(vertical = 8.dp)
+                    state               = listState,
+                    modifier            = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentPadding      = PaddingValues(vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    itemsIndexed(
+                    items(
                         items = state.users,
-                        key   = { _, user -> user.id }
-                    ) { index, user ->
-                        // remember(user.id) ensures the lambda reference is
-                        // stable across recompositions of the parent scope.
-                        // Without this, a new lambda instance on every recompose
-                        // would prevent Compose from skipping unchanged items
-                        // even after User gains @Immutable stability.
-                        val onClick   = remember(user.id) { { onUserClick(user.id) } }
-                        val onDelete  = remember(user.id) {
-                            { viewModel.processIntent(
-                                UserListIntent.DeleteUser(user.id, user.fullName)
-                            ) }
-                        }
-                        AnimatedUserListItem(
+                        key   = { user -> user.id }
+                    ) { user ->
+                        UserListItem(
                             user       = user,
-                            index      = index,
                             isSelected = user.id == selectedUserId,
-                            onClick    = onClick,
-                            onDelete   = onDelete
+                            onClick    = remember(user.id) { { onUserClick(user.id) } },
+                            onDelete   = remember(user.id) {
+                                {
+                                    viewModel.processIntent(
+                                        UserListIntent.DeleteUser(user.id, user.fullName)
+                                    )
+                                }
+                            },
+                            modifier   = Modifier.animateItem()
                         )
-                        HorizontalDivider()
                     }
 
-                    // ── Load-more spinner ─────────────────────────────────────
+                    // Pagination footer — single centered spinner, visually flush
+                    // with the list background so there is no "second section" seam.
                     if (state.isLoadingMore) {
-                        item {
-                            Box(
-                                modifier         = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                contentAlignment = Alignment.Center
-                            ) { CircularProgressIndicator() }
+                        item(key = "pagination_footer") {
+                            PaginationFooter()
                         }
                     }
                 }
             }
         }
 
-        // ── Snackbar host (delete-undo + errors) ──────────────────────────────
+        // ── Snackbar host ─────────────────────────────────────────────────────
         SnackbarHost(
             hostState = snackbarHost,
             modifier  = Modifier
@@ -193,33 +171,27 @@ fun UserListPane(
     }
 }
 
-// ── Animated list item ────────────────────────────────────────────────────────
+// ── Pagination footer ─────────────────────────────────────────────────────────
 
 /**
- * Wraps [UserListItem] in an [AnimatedVisibility] that fades + slides up
- * when the item first enters composition. Items stagger by [index] * 30 ms
- * so the list appears to cascade in from the top.
+ * Minimal spinner row shown at the bottom of the list while a next page is
+ * in flight. Sits on the same [MaterialTheme.colorScheme.surfaceVariant]
+ * background as the gaps between tiles, so it reads as a natural list tail
+ * rather than a separate loading section.
  */
 @Composable
-private fun AnimatedUserListItem(
-    user: User,
-    index: Int,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    onDelete: () -> Unit
-) {
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { visible = true }
-
-    AnimatedVisibility(
-        visible = visible,
-        enter   = fadeIn(tween(durationMillis = 300, delayMillis = (index * 30).coerceAtMost(300))) +
-                  slideInVertically(
-                      animationSpec = tween(durationMillis = 300, delayMillis = (index * 30).coerceAtMost(300)),
-                      initialOffsetY = { it / 4 }
-                  )
+private fun PaginationFooter() {
+    Box(
+        modifier         = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 20.dp),
+        contentAlignment = Alignment.Center
     ) {
-        UserListItem(user = user, isSelected = isSelected, onClick = onClick, onDelete = onDelete)
+        CircularProgressIndicator(
+            modifier    = Modifier.size(24.dp),
+            strokeWidth = 2.dp,
+            color       = MaterialTheme.colorScheme.primary
+        )
     }
 }
 
@@ -230,16 +202,17 @@ private fun UserListItem(
     user: User,
     isSelected: Boolean,
     onClick: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val background = if (isSelected)
-        Modifier.background(MaterialTheme.colorScheme.secondaryContainer)
+    val tileColor = if (isSelected)
+        MaterialTheme.colorScheme.secondaryContainer
     else
-        Modifier
+        MaterialTheme.colorScheme.surface
 
     ListItem(
-        modifier = Modifier
-            .then(background)
+        modifier = modifier
+            .background(tileColor)
             .clickable(onClick = onClick),
         leadingContent = {
             AsyncImage(
