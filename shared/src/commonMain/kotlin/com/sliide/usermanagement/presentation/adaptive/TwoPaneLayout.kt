@@ -1,5 +1,11 @@
 package com.sliide.usermanagement.presentation.adaptive
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -42,7 +48,7 @@ import com.sliide.usermanagement.presentation.userlist.UserListPane
 fun AdaptiveTwoPaneScreen(
     windowWidthClass: WindowWidthClass,
     selectedUserId: Int?,
-    onUserSelected: (Int) -> Unit,
+    onUserSelected: (Int?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val listWeight   = windowWidthClass.listPaneWeight
@@ -71,23 +77,37 @@ fun AdaptiveTwoPaneScreen(
                     .fillMaxHeight()
             ) {
                 UserListPane(
-                    onUserClick    = onUserSelected,
-                    selectedUserId = selectedUserId,
-                    modifier       = Modifier.fillMaxSize()
+                    onUserClick      = { onUserSelected(it) },
+                    selectedUserId   = selectedUserId,
+                    onAutoSelectUser = onUserSelected,
+                    modifier         = Modifier.fillMaxSize()
                 )
             }
 
             VerticalDivider()
 
-            // ── Detail pane ───────────────────────────────────────────────────
-            Box(
-                modifier = Modifier
+            // ── Detail pane — animated on selection change ────────────────────
+            AnimatedContent(
+                targetState    = selectedUserId,
+                transitionSpec = {
+                    val appearing = initialState == null && targetState != null
+                    if (appearing) {
+                        // First selection: slide up gently + fade in
+                        (slideInVertically(tween(350)) { it / 12 } +
+                                fadeIn(tween(350))) togetherWith fadeOut(tween(200))
+                    } else {
+                        // User swap or deselect: crossfade
+                        fadeIn(tween(280)) togetherWith fadeOut(tween(200))
+                    }
+                },
+                modifier       = Modifier
                     .weight(detailWeight)
-                    .fillMaxHeight()
-            ) {
-                if (selectedUserId != null) {
+                    .fillMaxHeight(),
+                label          = "detail_pane"
+            ) { uid ->
+                if (uid != null) {
                     UserDetailPane(
-                        userId   = selectedUserId,
+                        userId   = uid,
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {

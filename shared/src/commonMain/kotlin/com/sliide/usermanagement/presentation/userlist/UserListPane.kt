@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.CircularProgressIndicator
@@ -30,16 +29,18 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
 import com.sliide.usermanagement.domain.model.User
+import com.sliide.usermanagement.presentation.components.AvatarImage
 import com.sliide.usermanagement.presentation.components.FullScreenErrorView
 import com.sliide.usermanagement.presentation.components.ShimmerUserList
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
 
 /**
@@ -56,6 +57,7 @@ import org.koin.compose.viewmodel.koinViewModel
 fun UserListPane(
     onUserClick: (Int) -> Unit,
     selectedUserId: Int? = null,
+    onAutoSelectUser: ((Int?) -> Unit)? = null,
     modifier: Modifier = Modifier,
     viewModel: UserListViewModel = koinViewModel()
 ) {
@@ -64,19 +66,27 @@ fun UserListPane(
     val snackbarHost  = remember { SnackbarHostState() }
 
     // ── Effect handler ────────────────────────────────────────────────────────
+    // Each ShowUndoDelete is launched in its own child coroutine so the collect
+    // loop is never blocked. When a second deletion arrives while the first
+    // snackbar is still showing, the old job is cancelled (snackbar dismissed)
+    // and the new message appears immediately.
     LaunchedEffect(Unit) {
+        var undoSnackbarJob: Job? = null
         viewModel.effects.collect { effect ->
             when (effect) {
                 is UserListEffect.NavigateToDetail -> { /* handled by onUserClick caller */ }
                 is UserListEffect.ShowUndoDelete -> {
-                    val result = snackbarHost.showSnackbar(
-                        message           = "${effect.userName} deleted",
-                        actionLabel       = "Undo",
-                        duration          = SnackbarDuration.Long,
-                        withDismissAction = true
-                    )
-                    if (result == SnackbarResult.ActionPerformed) {
-                        viewModel.processIntent(UserListIntent.UndoDelete(effect.userId))
+                    undoSnackbarJob?.cancel()
+                    undoSnackbarJob = launch {
+                        val result = snackbarHost.showSnackbar(
+                            message           = "${effect.userName} deleted",
+                            actionLabel       = "Undo",
+                            duration          = SnackbarDuration.Long,
+                            withDismissAction = true
+                        )
+                        if (result == SnackbarResult.ActionPerformed) {
+                            viewModel.processIntent(UserListIntent.UndoDelete(effect.userId))
+                        }
                     }
                 }
                 is UserListEffect.ShowError ->
@@ -99,6 +109,28 @@ fun UserListPane(
     LaunchedEffect(shouldLoadMore) {
         if (shouldLoadMore && !state.isLoadingMore && !state.isLoading) {
             viewModel.processIntent(UserListIntent.LoadNextPage)
+        }
+    }
+
+    // ── Auto-select adjacent user when the selected user is deleted ───────────
+    // Track the last known list index of the selected user so we can jump to
+    // the nearest remaining user when it disappears from the list.
+    val lastSelectedIndex = remember { mutableIntStateOf(-1) }
+    LaunchedEffect(state.users, selectedUserId) {
+        val selected = selectedUserId
+        if (selected == null) {
+            lastSelectedIndex.intValue = -1
+            return@LaunchedEffect
+        }
+        val idx = state.users.indexOfFirst { it.id == selected }
+        when {
+            idx >= 0 -> lastSelectedIndex.intValue = idx   // user present — keep index fresh
+            !state.isLoading && !state.isLoadingMore -> {  // user gone from a settled list
+                val targetIdx = lastSelectedIndex.intValue
+                    .coerceIn(0, state.users.lastIndex.coerceAtLeast(0))
+                onAutoSelectUser?.invoke(state.users.getOrNull(targetIdx)?.id)
+                lastSelectedIndex.intValue = -1
+            }
         }
     }
 
@@ -215,12 +247,10 @@ private fun UserListItem(
             .background(tileColor)
             .clickable(onClick = onClick),
         leadingContent = {
-            AsyncImage(
+            AvatarImage(
                 model              = user.avatarUrl,
                 contentDescription = user.fullName,
-                modifier           = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
+                modifier           = Modifier.size(48.dp)
             )
         },
         headlineContent = {

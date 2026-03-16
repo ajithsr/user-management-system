@@ -1,5 +1,13 @@
 package com.sliide.usermanagement.presentation
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -9,7 +17,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.sliide.usermanagement.presentation.adaptive.AdaptiveTwoPaneScreen
-import com.sliide.usermanagement.presentation.adaptive.WindowWidthClass
 import com.sliide.usermanagement.presentation.adaptive.computeWindowWidthClass
 import com.sliide.usermanagement.presentation.adaptive.isTwoPane
 import com.sliide.usermanagement.presentation.theme.AppTheme
@@ -25,57 +32,72 @@ import com.sliide.usermanagement.presentation.userlist.UserListScreen
  * ----------------
  * A single nullable [selectedUserId] drives all navigation:
  *
- *  null + Compact   → UserListScreen (full window)
- *  non-null + Compact → UserDetailScreen (full window, push)
- *  any + Medium/Expanded → AdaptiveTwoPaneScreen (both panes always visible;
- *                          null = empty detail placeholder)
+ *  null + Compact     → UserListScreen (full window)
+ *  non-null + Compact → UserDetailScreen (full window, push animation)
+ *  any + Medium/Expanded → AdaptiveTwoPaneScreen (both panes always visible)
  *
- * Configuration-change safety
- * ---------------------------
- * [rememberSaveable] persists [selectedUserId] across process death and
- * configuration changes. On compact the user returns to the detail screen
- * they left; on wide layouts the correct user is pre-selected.
- *
- * Responsive rotation transitions
- * --------------------------------
- * - Compact detail → rotate to wide: [selectedUserId] is non-null → the
- *   two-pane screen appears with the detail already loaded in the right pane.
- * - Wide with selection → rotate to compact portrait: [selectedUserId] is
- *   non-null → [UserDetailScreen] is shown immediately (no list flash).
- * - Wide with no selection → rotate to compact: lands on [UserListScreen].
+ * Transitions
+ * -----------
+ * Compact list → detail : iOS-style push  (new screen slides from right; old retreats ⅓ left)
+ * Compact detail → list : iOS-style pop   (screen exits right; previous advances from ⅓ left)
+ * Any width-class change : crossfade 300 ms
  */
 @Composable
 fun App() {
     AppTheme {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val windowWidthClass = computeWindowWidthClass(maxWidth)
-
-            // rememberSaveable survives configuration changes and process death.
             var selectedUserId by rememberSaveable { mutableStateOf<Int?>(null) }
 
-            when {
-                // ── Wide: persistent two-pane ──────────────────────────────────
-                windowWidthClass.isTwoPane -> {
-                    AdaptiveTwoPaneScreen(
+            // Stable screen key for AnimatedContent.
+            // TwoPane is a singleton so internal selection changes don't trigger
+            // a full-screen transition — they animate inside the two-pane layout.
+            val navScreen: NavScreen = when {
+                windowWidthClass.isTwoPane -> NavScreen.TwoPane
+                selectedUserId != null     -> NavScreen.Detail(selectedUserId!!)
+                else                       -> NavScreen.List
+            }
+
+            AnimatedContent(
+                targetState    = navScreen,
+                transitionSpec = {
+                    val forward  = initialState == NavScreen.List   && targetState is NavScreen.Detail
+                    val backward = initialState is NavScreen.Detail && targetState == NavScreen.List
+                    when {
+                        // Push: new screen enters from right; current retreats ⅓ left
+                        forward  ->
+                            (slideInHorizontally(tween(380, easing = FastOutSlowInEasing)) { it } +
+                                    fadeIn(tween(380))) togetherWith
+                                    (slideOutHorizontally(tween(380, easing = FastOutSlowInEasing)) { -it / 3 } +
+                                            fadeOut(tween(180)))
+
+                        // Pop: screen exits right; previous advances from ⅓ left
+                        backward ->
+                            (slideInHorizontally(tween(380, easing = FastOutSlowInEasing)) { -it / 3 } +
+                                    fadeIn(tween(380))) togetherWith
+                                    (slideOutHorizontally(tween(380, easing = FastOutSlowInEasing)) { it } +
+                                            fadeOut(tween(180)))
+
+                        // Rotation / width-class change: crossfade
+                        else     -> fadeIn(tween(300)) togetherWith fadeOut(tween(300))
+                    }
+                },
+                modifier       = Modifier.fillMaxSize(),
+                label          = "root_nav"
+            ) { screen ->
+                when (screen) {
+                    NavScreen.TwoPane -> AdaptiveTwoPaneScreen(
                         windowWidthClass = windowWidthClass,
                         selectedUserId   = selectedUserId,
                         onUserSelected   = { selectedUserId = it },
                         modifier         = Modifier.fillMaxSize()
                     )
-                }
-
-                // ── Compact: user selected → full-screen detail ────────────────
-                selectedUserId != null -> {
-                    UserDetailScreen(
-                        userId         = selectedUserId!!,
+                    is NavScreen.Detail -> UserDetailScreen(
+                        userId         = screen.userId,
                         onNavigateBack = { selectedUserId = null },
                         modifier       = Modifier.fillMaxSize()
                     )
-                }
-
-                // ── Compact: no selection → full-screen list ───────────────────
-                else -> {
-                    UserListScreen(
+                    NavScreen.List -> UserListScreen(
                         onNavigateToDetail = { selectedUserId = it },
                         modifier           = Modifier.fillMaxSize()
                     )
@@ -83,4 +105,12 @@ fun App() {
             }
         }
     }
+}
+
+// ── Screen key ────────────────────────────────────────────────────────────────
+
+private sealed interface NavScreen {
+    data object List    : NavScreen
+    data class  Detail(val userId: Int) : NavScreen
+    data object TwoPane : NavScreen
 }

@@ -101,8 +101,13 @@ class UserListViewModel(
     }
 
     private fun undoDelete(id: Int) {
-        val job = pendingDeletes.remove(id) ?: return
-        job.cancel()
+        // Cancel the pending confirm-delete timer if it is still running.
+        // Do NOT early-return when the job is absent: the timer may have just
+        // completed before this call arrived (race at the window boundary), but
+        // confirmDelete's isDeleted guard means the row is only hard-deleted if
+        // isDeleted == 1. If the race is lost the undo is a no-op SQL UPDATE,
+        // which is safe — we still attempt it so the user isn't silently failed.
+        pendingDeletes.remove(id)?.cancel()
         viewModelScope.launch {
             getUsersUseCase.undoDelete(id)
                 .onFailure { error ->
@@ -127,6 +132,8 @@ class UserListViewModel(
     }
 
     companion object {
-        const val UNDO_WINDOW_MS = 5_000L
+        // Must be >= SnackbarDuration.Long (~10 000 ms) so the row is never
+        // hard-deleted while the "Undo" snackbar is still on screen.
+        const val UNDO_WINDOW_MS = 10_000L
     }
 }
