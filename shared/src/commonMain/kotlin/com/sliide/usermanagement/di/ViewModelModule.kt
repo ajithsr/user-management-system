@@ -73,6 +73,7 @@ val viewModelModule = module {
         UserDetailViewModel(
             userId               = params.get(),
             getUserDetailUseCase = get(),
+            getUsersUseCase      = get(),
         )
     }
 }

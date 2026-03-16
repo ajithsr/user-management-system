@@ -3,7 +3,11 @@ package com.sliide.usermanagement.presentation.userlist
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sliide.usermanagement.domain.usecase.GetUsersUseCase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,6 +17,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 class UserListViewModel(
     private val getUsersUseCase: GetUsersUseCase
@@ -23,6 +28,8 @@ class UserListViewModel(
 
     private val _effects = Channel<UserListEffect>(Channel.BUFFERED)
     val effects = _effects.receiveAsFlow()
+
+    private val pendingDeletes = mutableMapOf<Int, Job>()
 
     init {
         // Combine users and pagination into a single state update so that a
@@ -56,6 +63,70 @@ class UserListViewModel(
                 _effects.send(UserListEffect.NavigateToDetail(intent.userId))
             }
             is UserListIntent.DismissError -> _state.update { it.copy(error = null) }
+            is UserListIntent.DeleteUser   -> deleteUser(intent.userId, intent.userName)
+            is UserListIntent.UndoDelete   -> undoDelete(intent.userId)
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        flushPendingDeletes()
+    }
+
+    private fun deleteUser(id: Int, userName: String) {
+        if (pendingDeletes.containsKey(id)) return
+
+        pendingDeletes[id] = viewModelScope.launch {
+            getUsersUseCase.softDeleteUser(id)
+                .onFailure { error ->
+                    pendingDeletes.remove(id)
+                    _effects.send(UserListEffect.ShowError(
+                        error.message ?: "Failed to delete user"
+                    ))
+                    return@launch
+                }
+
+            _effects.send(UserListEffect.ShowUndoDelete(id, userName))
+
+            delay(UNDO_WINDOW_MS)
+
+            getUsersUseCase.confirmDelete(id)
+                .onFailure { error ->
+                    _effects.send(UserListEffect.ShowError(
+                        error.message ?: "Failed to finalize delete"
+                    ))
+                }
+            pendingDeletes.remove(id)
+        }
+    }
+
+    private fun undoDelete(id: Int) {
+        val job = pendingDeletes.remove(id) ?: return
+        job.cancel()
+        viewModelScope.launch {
+            getUsersUseCase.undoDelete(id)
+                .onFailure { error ->
+                    _effects.send(UserListEffect.ShowError(
+                        error.message ?: "Failed to undo delete"
+                    ))
+                    getUsersUseCase.confirmDelete(id)
+                }
+        }
+    }
+
+    private fun flushPendingDeletes() {
+        if (pendingDeletes.isEmpty()) return
+        val ids = pendingDeletes.keys.toList()
+        pendingDeletes.values.forEach { it.cancel() }
+        pendingDeletes.clear()
+        CoroutineScope(SupervisorJob()).launch {
+            withTimeout(10_000L) {
+                ids.forEach { id -> launch { getUsersUseCase.confirmDelete(id) } }
+            }
+        }
+    }
+
+    companion object {
+        const val UNDO_WINDOW_MS = 5_000L
     }
 }

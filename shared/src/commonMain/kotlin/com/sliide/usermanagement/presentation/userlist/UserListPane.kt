@@ -16,13 +16,19 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -68,8 +74,34 @@ fun UserListPane(
     modifier: Modifier = Modifier,
     viewModel: UserListViewModel = koinViewModel()
 ) {
-    val state     by viewModel.state.collectAsState()
-    val listState  = rememberLazyListState()
+    val state          by viewModel.state.collectAsState()
+    val listState       = rememberLazyListState()
+    val snackbarHost    = remember { SnackbarHostState() }
+
+    // ── Effect handler ────────────────────────────────────────────────────────
+    LaunchedEffect(Unit) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                is UserListEffect.NavigateToDetail -> { /* handled by onUserClick caller */ }
+                is UserListEffect.ShowUndoDelete -> {
+                    val result = snackbarHost.showSnackbar(
+                        message          = "${effect.userName} deleted",
+                        actionLabel      = "Undo",
+                        duration         = SnackbarDuration.Long,
+                        withDismissAction = true
+                    )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        viewModel.processIntent(UserListIntent.UndoDelete(effect.userId))
+                    }
+                }
+                is UserListEffect.ShowError ->
+                    snackbarHost.showSnackbar(
+                        message  = effect.message,
+                        duration = SnackbarDuration.Short
+                    )
+            }
+        }
+    }
 
     // ── Infinite scroll trigger ───────────────────────────────────────────────
     val shouldLoadMore by remember {
@@ -120,12 +152,18 @@ fun UserListPane(
                         // Without this, a new lambda instance on every recompose
                         // would prevent Compose from skipping unchanged items
                         // even after User gains @Immutable stability.
-                        val onClick = remember(user.id) { { onUserClick(user.id) } }
+                        val onClick   = remember(user.id) { { onUserClick(user.id) } }
+                        val onDelete  = remember(user.id) {
+                            { viewModel.processIntent(
+                                UserListIntent.DeleteUser(user.id, user.fullName)
+                            ) }
+                        }
                         AnimatedUserListItem(
                             user       = user,
                             index      = index,
                             isSelected = user.id == selectedUserId,
-                            onClick    = onClick
+                            onClick    = onClick,
+                            onDelete   = onDelete
                         )
                         HorizontalDivider()
                     }
@@ -145,19 +183,13 @@ fun UserListPane(
             }
         }
 
-        // ── Inline error snackbar (stale data visible beneath) ────────────────
-        if (state.error != null && state.users.isNotEmpty()) {
-            Snackbar(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(16.dp),
-                action = {
-                    TextButton(
-                        onClick = { viewModel.processIntent(UserListIntent.DismissError) }
-                    ) { Text("Dismiss") }
-                }
-            ) { Text(state.error ?: "") }
-        }
+        // ── Snackbar host (delete-undo + errors) ──────────────────────────────
+        SnackbarHost(
+            hostState = snackbarHost,
+            modifier  = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(16.dp)
+        )
     }
 }
 
@@ -173,7 +205,8 @@ private fun AnimatedUserListItem(
     user: User,
     index: Int,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDelete: () -> Unit
 ) {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
@@ -186,7 +219,7 @@ private fun AnimatedUserListItem(
                       initialOffsetY = { it / 4 }
                   )
     ) {
-        UserListItem(user = user, isSelected = isSelected, onClick = onClick)
+        UserListItem(user = user, isSelected = isSelected, onClick = onClick, onDelete = onDelete)
     }
 }
 
@@ -196,7 +229,8 @@ private fun AnimatedUserListItem(
 private fun UserListItem(
     user: User,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDelete: () -> Unit
 ) {
     val background = if (isSelected)
         Modifier.background(MaterialTheme.colorScheme.secondaryContainer)
@@ -233,11 +267,12 @@ private fun UserListItem(
             )
         },
         trailingContent = {
-            Text(
-                text  = user.company.name,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline
-            )
+            IconButton(onClick = onDelete) {
+                Icon(
+                    imageVector        = Icons.Default.Delete,
+                    contentDescription = "Delete ${user.fullName}"
+                )
+            }
         }
     )
 }
