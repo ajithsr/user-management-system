@@ -12,20 +12,22 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.collectAsState
 import com.sliide.usermanagement.domain.model.CreateUserRequest
 import com.sliide.usermanagement.domain.model.Gender
 import com.sliide.usermanagement.domain.validation.FieldError
@@ -80,8 +82,12 @@ fun AddUserFormDialog(
                     onValueChange = { viewModel.onIntent(AddUserFormIntent.UpdateFirstName(it)) },
                     label         = { Text("First name") },
                     isError       = v.firstName != null,
-                    supportingText = v.firstName?.let { { Text(it.displayMessage()) } },
-                    modifier      = Modifier.fillMaxWidth()
+                    supportingText = v.firstName?.let { err ->
+                        { Text(err.displayMessage(), color = MaterialTheme.colorScheme.error) }
+                    },
+                    modifier      = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { if (!it.isFocused && formState.input.firstName.isNotEmpty()) viewModel.onIntent(AddUserFormIntent.BlurField(AddUserFormField.FirstName)) }
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -89,8 +95,12 @@ fun AddUserFormDialog(
                     onValueChange = { viewModel.onIntent(AddUserFormIntent.UpdateLastName(it)) },
                     label         = { Text("Last name") },
                     isError       = v.lastName != null,
-                    supportingText = v.lastName?.let { { Text(it.displayMessage()) } },
-                    modifier      = Modifier.fillMaxWidth()
+                    supportingText = v.lastName?.let { err ->
+                        { Text(err.displayMessage(), color = MaterialTheme.colorScheme.error) }
+                    },
+                    modifier      = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { if (!it.isFocused && formState.input.lastName.isNotEmpty()) viewModel.onIntent(AddUserFormIntent.BlurField(AddUserFormField.LastName)) }
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -98,9 +108,13 @@ fun AddUserFormDialog(
                     onValueChange = { viewModel.onIntent(AddUserFormIntent.UpdateEmail(it)) },
                     label         = { Text("Email") },
                     isError       = v.email != null,
-                    supportingText = v.email?.let { { Text(it.displayMessage()) } },
+                    supportingText = v.email?.let { err ->
+                        { Text(err.displayMessage(), color = MaterialTheme.colorScheme.error) }
+                    },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                    modifier      = Modifier.fillMaxWidth()
+                    modifier      = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { if (!it.isFocused && formState.input.email.isNotEmpty()) viewModel.onIntent(AddUserFormIntent.BlurField(AddUserFormField.Email)) }
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -108,8 +122,12 @@ fun AddUserFormDialog(
                     onValueChange = { viewModel.onIntent(AddUserFormIntent.UpdateUsername(it)) },
                     label         = { Text("Username") },
                     isError       = v.username != null,
-                    supportingText = v.username?.let { { Text(it.displayMessage()) } },
-                    modifier      = Modifier.fillMaxWidth()
+                    supportingText = v.username?.let { err ->
+                        { Text(err.displayMessage(), color = MaterialTheme.colorScheme.error) }
+                    },
+                    modifier      = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { if (!it.isFocused && formState.input.username.isNotEmpty()) viewModel.onIntent(AddUserFormIntent.BlurField(AddUserFormField.Username)) }
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -117,9 +135,13 @@ fun AddUserFormDialog(
                     onValueChange = { viewModel.onIntent(AddUserFormIntent.UpdateAge(it)) },
                     label         = { Text("Age") },
                     isError       = v.age != null,
-                    supportingText = v.age?.let { { Text(it.displayMessage()) } },
+                    supportingText = v.age?.let { err ->
+                        { Text(err.displayMessage(), color = MaterialTheme.colorScheme.error) }
+                    },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier      = Modifier.fillMaxWidth()
+                    modifier      = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { if (!it.isFocused && formState.input.age.isNotEmpty()) viewModel.onIntent(AddUserFormIntent.BlurField(AddUserFormField.Age)) }
                 )
                 Spacer(Modifier.height(8.dp))
                 ExposedDropdownMenuBox(
@@ -132,6 +154,9 @@ fun AddUserFormDialog(
                         readOnly      = true,
                         label         = { Text("Gender") },
                         isError       = v.gender != null,
+                        supportingText = v.gender?.let { err ->
+                            { Text(err.displayMessage(), color = MaterialTheme.colorScheme.error) }
+                        },
                         trailingIcon  = {
                             ExposedDropdownMenuDefaults.TrailingIcon(expanded = genderExpanded)
                         },
@@ -148,6 +173,7 @@ fun AddUserFormDialog(
                                 text    = { Text(gender.name) },
                                 onClick = {
                                     viewModel.onIntent(AddUserFormIntent.UpdateGender(gender))
+                                    viewModel.onIntent(AddUserFormIntent.BlurField(AddUserFormField.Gender))
                                     genderExpanded = false
                                 }
                             )

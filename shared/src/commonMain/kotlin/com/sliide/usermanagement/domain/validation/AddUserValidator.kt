@@ -38,7 +38,7 @@ object AddUserValidator {
     const val USERNAME_MIN_LENGTH = 3
     const val USERNAME_MAX_LENGTH = 30
     const val EMAIL_MAX_LENGTH    = 254   // RFC 5321 §4.5.3.1.3
-    const val AGE_MIN             = 13
+    const val AGE_MIN             = 18
     const val AGE_MAX             = 120
 
     // ── Compiled patterns ─────────────────────────────────────────────────────

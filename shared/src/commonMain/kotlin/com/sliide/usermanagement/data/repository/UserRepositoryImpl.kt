@@ -136,37 +136,79 @@ class UserRepositoryImpl(
      * Phase 2 (network, no mutex) — POST /users/add.
      *   Success: reacquire mutex, promote temp→real id, clear pending flag.
      *   Failure: reacquire mutex, hard-delete the temp row.
+     *
+     * Temp-ID design
+     * --------------
+     * We use `-(epochMs % Int.MAX_VALUE)` rather than a raw epoch millisecond
+     * so the value fits in Kotlin [Int] without overflow. The domain model maps
+     * [UserEntity.id] (Long) to [User.id] (Int) via `.toInt()`. A raw epoch ms
+     * like -1_742_000_000_000 would silently overflow, producing a garbage Int
+     * and making the detail-screen observe the wrong DB row.
+     * The modulo result is in `[0, Int.MAX_VALUE)`, so its negation is in
+     * `(Int.MIN_VALUE, 0]` — safe for both Long and Int.
+     *
+     * Conflict handling
+     * -----------------
+     * dummyjson's /users/add returns a **fixed synthetic id** (e.g. 209) on
+     * every call — it does not actually persist the record. That id may already
+     * exist in the local DB from a prior pagination fetch. A plain UPDATE would
+     * hit a UNIQUE constraint and leave the temp row stranded (stuck spinner,
+     * error snackbar). We check for the conflict before promoting and simply
+     * remove the temp row when the real id is already present.
      */
     override suspend fun createUser(request: CreateUserRequest): Result<User> {
         val now = clock.now()
-        val tempId = -now.toEpochMilliseconds()
+        // Int-safe negative tempId — survives the Long→Int cast in toDomain().
+        val tempId = -(now.toEpochMilliseconds() % Int.MAX_VALUE.toLong())
         val tempEntity = request.toTempEntity(
             tempId    = tempId,
             createdAt = now.toEpochMilliseconds()
         )
 
+        println("[UserMgmt] createUser: optimistic insert tempId=$tempId — ${request.firstName} ${request.lastName} <${request.email}>")
+
         // Phase 1: optimistic insert — mutex held only for the DB write
         mutex.withLock { localDataSource.insertPendingUser(tempEntity) }
+
+        println("[UserMgmt] createUser: POST /users/add → ${request.firstName} ${request.lastName} <${request.email}>")
 
         // Phase 2: network outside mutex — does not starve concurrent writes
         return runCatching { remoteDataSource.createUser(request.toCreateDto()) }
             .fold(
                 onSuccess = { dto ->
+                    println("[UserMgmt] createUser: POST success — server returned id=${dto.id}")
                     runCatching {
                         mutex.withLock {
-                            localDataSource.confirmPendingUser(
-                                tempId = tempId,
-                                realId = dto.id.toLong()
-                            )
-                            localDataSource.getOneById(dto.id.toLong())?.toDomain()
-                                ?: tempEntity.copy(
-                                    id              = dto.id.toLong(),
-                                    isPendingCreate = 0L
-                                ).toDomain()
+                            // Confirm in-place: keep the negative tempId as the
+                            // permanent local id and just clear isPendingCreate.
+                            //
+                            // Why not promote to the server's realId?
+                            //  • dummyjson returns a fixed synthetic id (e.g. 209)
+                            //    that may already exist in the DB from pagination,
+                            //    causing a UNIQUE constraint crash.
+                            //  • Promoting the id changes the item's sort position
+                            //    (negative id → first; positive id → somewhere in
+                            //    the middle/end of the list), making the row jump
+                            //    away from the top immediately after confirmation.
+                            //
+                            // Confirming in-place (realId = tempId) is a no-op on
+                            // the id column and only clears isPendingCreate.
+                            // The row stays at position 0 (ORDER BY id ASC, negative
+                            // ids sort first) and becomes tappable.
+                            println("[UserMgmt] createUser: confirming in-place — keeping tempId=$tempId")
+                            localDataSource.confirmPendingUser(tempId = tempId, realId = tempId)
+                            localDataSource.getOneById(tempId)?.toDomain()
+                                ?: tempEntity.copy(isPendingCreate = 0L).toDomain()
                         }
+                    }.onFailure { error ->
+                        // Unexpected confirmation error — clean up so no stale
+                        // spinner is left in the list.
+                        println("[UserMgmt] createUser: confirmation error — ${error.message}. Removing tempId=$tempId")
+                        runCatching { mutex.withLock { localDataSource.hardDeleteUser(tempId) } }
                     }
                 },
                 onFailure = { error ->
+                    println("[UserMgmt] createUser: POST failed — ${error::class.simpleName}: ${error.message}")
                     mutex.withLock { localDataSource.hardDeleteUser(tempId) }
                     Result.failure(error)
                 }

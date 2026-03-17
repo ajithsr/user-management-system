@@ -20,7 +20,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
@@ -31,6 +30,9 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,18 +54,24 @@ import org.koin.compose.viewmodel.koinViewModel
  * • `error != null && users.isEmpty()` → [FullScreenErrorView] with Retry.
  * • `isLoadingMore` while users non-empty → list stays fully visible; a slim
  *   [PaginationFooter] spinner appears below the last row — no blank area, no seam.
+ *
+ * Snackbar
+ * --------
+ * Callers pass [snackbarHostState] so the snackbar is rendered inside the
+ * parent [Scaffold]'s `snackbarHost` slot, which Material3 automatically
+ * positions above the FAB.
  */
 @Composable
 fun UserListPane(
     onUserClick: (Int) -> Unit,
     selectedUserId: Int? = null,
     onAutoSelectUser: ((Int?) -> Unit)? = null,
+    snackbarHostState: SnackbarHostState,
     modifier: Modifier = Modifier,
-    viewModel: UserListViewModel = koinViewModel()
+    viewModel: UserListViewModel = koinViewModel(),
 ) {
     val state        by viewModel.state.collectAsState()
     val listState     = rememberLazyListState()
-    val snackbarHost  = remember { SnackbarHostState() }
 
     // ── Effect handler ────────────────────────────────────────────────────────
     // Each ShowUndoDelete is launched in its own child coroutine so the collect
@@ -78,7 +86,7 @@ fun UserListPane(
                 is UserListEffect.ShowUndoDelete -> {
                     undoSnackbarJob?.cancel()
                     undoSnackbarJob = launch {
-                        val result = snackbarHost.showSnackbar(
+                        val result = snackbarHostState.showSnackbar(
                             message           = "${effect.userName} deleted",
                             actionLabel       = "Undo",
                             duration          = SnackbarDuration.Long,
@@ -90,10 +98,18 @@ fun UserListPane(
                     }
                 }
                 is UserListEffect.ShowError ->
-                    snackbarHost.showSnackbar(
+                    snackbarHostState.showSnackbar(
                         message  = effect.message,
                         duration = SnackbarDuration.Short
                     )
+                is UserListEffect.ScrollToUser -> {
+                    // Wait until the restored user appears in state.users — handles the
+                    // timing gap between the DB write completing and state propagating to UI.
+                    val index = snapshotFlow { state.users.indexOfFirst { it.id == effect.userId } }
+                        .filter { it >= 0 }
+                        .first()
+                    listState.scrollToItem(index)
+                }
             }
         }
     }
@@ -109,6 +125,19 @@ fun UserListPane(
     LaunchedEffect(shouldLoadMore) {
         if (shouldLoadMore && !state.isLoadingMore && !state.isLoading) {
             viewModel.processIntent(UserListIntent.LoadNextPage)
+        }
+    }
+
+    // ── Scroll to newly created user ──────────────────────────────────────────
+    // Key on the pending user's id (a unique negative Int) rather than a Boolean.
+    // This LaunchedEffect only fires when a NEW pending user appears — i.e. after
+    // the optimistic DB insert has landed and the item is already at index 0 in
+    // the list. scrollToItem(0) is instant so it cannot be interrupted by a fast
+    // API response completing before an animation would finish.
+    val pendingUserId = state.users.firstOrNull()?.takeIf { it.isPending }?.id
+    LaunchedEffect(pendingUserId) {
+        if (pendingUserId != null) {
+            listState.scrollToItem(0)
         }
     }
 
@@ -170,7 +199,12 @@ fun UserListPane(
                         UserListItem(
                             user       = user,
                             isSelected = user.id == selectedUserId,
-                            onClick    = remember(user.id) { { onUserClick(user.id) } },
+                            // Pending users don't have a stable navigable ID yet —
+                            // disable tap until the POST is confirmed and the real
+                            // ID is assigned.
+                            onClick    = remember(user.id, user.isPending) {
+                                if (user.isPending) ({}) else { { onUserClick(user.id) } }
+                            },
                             onDelete   = remember(user.id) {
                                 {
                                     viewModel.processIntent(
@@ -192,14 +226,6 @@ fun UserListPane(
                 }
             }
         }
-
-        // ── Snackbar host ─────────────────────────────────────────────────────
-        SnackbarHost(
-            hostState = snackbarHost,
-            modifier  = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(16.dp)
-        )
     }
 }
 
@@ -245,7 +271,7 @@ private fun UserListItem(
     ListItem(
         modifier = modifier
             .background(tileColor)
-            .clickable(onClick = onClick),
+            .clickable(enabled = !user.isPending, onClick = onClick),
         leadingContent = {
             AvatarImage(
                 model              = user.avatarUrl,
@@ -263,18 +289,35 @@ private fun UserListItem(
         },
         supportingContent = {
             Text(
-                text     = user.email,
+                text     = if (user.isPending) "Creating…" else user.email,
                 style    = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                color    = if (user.isPending) MaterialTheme.colorScheme.outline
+                           else MaterialTheme.colorScheme.onSurfaceVariant
             )
         },
         trailingContent = {
-            IconButton(onClick = onDelete) {
-                Icon(
-                    imageVector        = Icons.Default.Delete,
-                    contentDescription = "Delete ${user.fullName}"
-                )
+            if (user.isPending) {
+                // Show a spinner in the same 48×48 area as the IconButton so
+                // the row height doesn't shift when the user is confirmed.
+                Box(
+                    modifier         = Modifier.size(48.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        modifier    = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                        color       = MaterialTheme.colorScheme.primary
+                    )
+                }
+            } else {
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        imageVector        = Icons.Default.Delete,
+                        contentDescription = "Delete ${user.fullName}"
+                    )
+                }
             }
         }
     )

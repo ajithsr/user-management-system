@@ -2,6 +2,7 @@ package com.sliide.usermanagement.presentation.userlist
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sliide.usermanagement.domain.model.CreateUserRequest
 import com.sliide.usermanagement.domain.usecase.GetUsersUseCase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -65,12 +66,24 @@ class UserListViewModel(
             is UserListIntent.DismissError -> _state.update { it.copy(error = null) }
             is UserListIntent.DeleteUser   -> deleteUser(intent.userId, intent.userName)
             is UserListIntent.UndoDelete   -> undoDelete(intent.userId)
+            is UserListIntent.CreateUser   -> createUser(intent.request)
         }
     }
 
     override fun onCleared() {
         super.onCleared()
         flushPendingDeletes()
+    }
+
+    private fun createUser(request: CreateUserRequest) {
+        viewModelScope.launch {
+            getUsersUseCase.createUser(request)
+                .onFailure { error ->
+                    _effects.send(UserListEffect.ShowError(
+                        error.message ?: "Failed to add user"
+                    ))
+                }
+        }
     }
 
     private fun deleteUser(id: Int, userName: String) {
@@ -110,6 +123,9 @@ class UserListViewModel(
         pendingDeletes.remove(id)?.cancel()
         viewModelScope.launch {
             getUsersUseCase.undoDelete(id)
+                .onSuccess {
+                    _effects.send(UserListEffect.ScrollToUser(id))
+                }
                 .onFailure { error ->
                     _effects.send(UserListEffect.ShowError(
                         error.message ?: "Failed to undo delete"

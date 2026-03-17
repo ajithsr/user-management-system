@@ -11,18 +11,33 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.sliide.usermanagement.presentation.adduser.AddUserFormDialog
 import com.sliide.usermanagement.presentation.userdetail.UserDetailPane
+import com.sliide.usermanagement.presentation.userlist.UserListIntent
 import com.sliide.usermanagement.presentation.userlist.UserListPane
+import com.sliide.usermanagement.presentation.userlist.UserListViewModel
+import org.koin.compose.viewmodel.koinViewModel
 
 /**
  * Two-pane master-detail layout used when [windowWidthClass] is
@@ -37,11 +52,10 @@ import com.sliide.usermanagement.presentation.userlist.UserListPane
  *  │              │  selected                        │
  *  └──────────────┴──────────────────────────────────┘
  *
- * The list pane highlights the currently selected row. Selecting a row
- * updates [selectedUserId]; the detail pane recomposes in place.
- *
  * A single [Scaffold] wraps both panes — no nested Scaffolds — so
- * window insets are applied exactly once.
+ * window insets are applied exactly once. The [SnackbarHostState] is owned
+ * here and passed into the Scaffold's `snackbarHost` slot so it is
+ * automatically rendered above the FAB.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,10 +63,13 @@ fun AdaptiveTwoPaneScreen(
     windowWidthClass: WindowWidthClass,
     selectedUserId: Int?,
     onUserSelected: (Int?) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    listViewModel: UserListViewModel = koinViewModel()
 ) {
-    val listWeight   = windowWidthClass.listPaneWeight
-    val detailWeight = 1f - listWeight
+    val listWeight        = windowWidthClass.listPaneWeight
+    val detailWeight      = 1f - listWeight
+    val snackbarHostState = remember { SnackbarHostState() }
+    var showAddUserDialog by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier,
@@ -63,7 +80,15 @@ fun AdaptiveTwoPaneScreen(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
             )
-        }
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = { showAddUserDialog = true },
+                icon    = { Icon(Icons.Default.Add, contentDescription = null) },
+                text    = { Text("Add User") }
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Row(
             modifier = Modifier
@@ -77,10 +102,12 @@ fun AdaptiveTwoPaneScreen(
                     .fillMaxHeight()
             ) {
                 UserListPane(
-                    onUserClick      = { onUserSelected(it) },
-                    selectedUserId   = selectedUserId,
-                    onAutoSelectUser = onUserSelected,
-                    modifier         = Modifier.fillMaxSize()
+                    onUserClick       = { onUserSelected(it) },
+                    selectedUserId    = selectedUserId,
+                    onAutoSelectUser  = onUserSelected,
+                    snackbarHostState = snackbarHostState,
+                    viewModel         = listViewModel,
+                    modifier          = Modifier.fillMaxSize()
                 )
             }
 
@@ -115,6 +142,16 @@ fun AdaptiveTwoPaneScreen(
                 }
             }
         }
+    }
+
+    if (showAddUserDialog) {
+        AddUserFormDialog(
+            onDismiss = { showAddUserDialog = false },
+            onSubmit  = { request ->
+                showAddUserDialog = false
+                listViewModel.processIntent(UserListIntent.CreateUser(request))
+            }
+        )
     }
 }
 
