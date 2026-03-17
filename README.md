@@ -9,7 +9,7 @@ This project was intentionally developed using **Claude Code** as an AI engineer
 
 ## 🎬 Application Demo
 
-Watch Demo - https://github.com/ajithsr/user-management-system/tree/main/docs/user_management.webm
+[Watch Demo](docs/user_management.webm)
 
 ---
 
