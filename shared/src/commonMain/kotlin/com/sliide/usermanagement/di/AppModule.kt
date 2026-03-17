@@ -1,5 +1,6 @@
 package com.sliide.usermanagement.di
 
+import com.sliide.usermanagement.connectivity.NetworkMonitor
 import com.sliide.usermanagement.data.local.DatabaseDriverFactory
 import org.koin.core.context.startKoin
 import org.koin.core.module.Module
@@ -30,11 +31,17 @@ import org.koin.dsl.module
  * (created with `module(override = true)`) must come **after** the modules whose
  * bindings they replace, so append test modules at the end of the list.
  */
-fun appModules(driverFactory: DatabaseDriverFactory): List<Module> = listOf(
-    // Platform entry-point: DatabaseDriverFactory is an `expect class` whose
-    // `actual` implementation carries an Android Context / iOS pointer.
-    // Binding it here keeps all other modules free of platform-specific imports.
-    module { single { driverFactory } },
+fun appModules(
+    driverFactory  : DatabaseDriverFactory,
+    networkMonitor : NetworkMonitor,
+): List<Module> = listOf(
+    // Platform entry-points: expect classes whose actual implementations carry
+    // platform-specific dependencies (Android Context, iOS NWPathMonitor, etc.).
+    // Binding them here keeps all other modules free of platform-specific imports.
+    module {
+        single { driverFactory }
+        single { networkMonitor }
+    },
 
     networkModule,    // Json, HttpClient (singleton), UserApiService
     databaseModule,   // UserDatabase, UserLocalDataSource
@@ -49,14 +56,17 @@ fun appModules(driverFactory: DatabaseDriverFactory): List<Module> = listOf(
  * @param driverFactory  Platform-specific SQLite driver factory. On Android,
  *                       pass `DatabaseDriverFactory(context)`; on iOS the
  *                       no-arg `DatabaseDriverFactory()` is used.
+ * @param networkMonitor Platform-specific connectivity monitor. On Android,
+ *                       pass `NetworkMonitor(context)`; on iOS `NetworkMonitor()`.
  * @param appDeclaration Optional lambda for platform-specific Koin configuration
  *                       (e.g. `androidContext(this)` on Android). Executed before
  *                       the module list is loaded.
  */
 fun initKoin(
     driverFactory  : DatabaseDriverFactory,
+    networkMonitor : NetworkMonitor,
     appDeclaration : KoinAppDeclaration = {},
 ) = startKoin {
     appDeclaration()
-    modules(appModules(driverFactory))
+    modules(appModules(driverFactory, networkMonitor))
 }

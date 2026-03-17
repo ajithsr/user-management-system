@@ -1,7 +1,8 @@
 package com.sliide.usermanagement.presentation.userlist
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -23,13 +25,16 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
@@ -72,6 +77,7 @@ fun UserListPane(
 ) {
     val state        by viewModel.state.collectAsState()
     val listState     = rememberLazyListState()
+    var userPendingDelete by remember { mutableStateOf<User?>(null) }
 
     // ── Effect handler ────────────────────────────────────────────────────────
     // Each ShowUndoDelete is launched in its own child coroutine so the collect
@@ -163,6 +169,17 @@ fun UserListPane(
         }
     }
 
+    userPendingDelete?.let { user ->
+        DeleteConfirmationDialog(
+            userName  = user.fullName,
+            onConfirm = {
+                userPendingDelete = null
+                viewModel.processIntent(UserListIntent.DeleteUser(user.id, user.fullName))
+            },
+            onDismiss = { userPendingDelete = null }
+        )
+    }
+
     Box(modifier = modifier) {
         when {
             // ── 1. First-load shimmer ─────────────────────────────────────────
@@ -204,6 +221,9 @@ fun UserListPane(
                             // ID is assigned.
                             onClick    = remember(user.id, user.isPending) {
                                 if (user.isPending) ({}) else { { onUserClick(user.id) } }
+                            },
+                            onLongClick = remember(user.id, user.isPending) {
+                                if (user.isPending) null else ({ userPendingDelete = user })
                             },
                             onDelete   = remember(user.id) {
                                 {
@@ -253,13 +273,36 @@ private fun PaginationFooter() {
     }
 }
 
+// ── Delete confirmation dialog ────────────────────────────────────────────────
+
+@Composable
+private fun DeleteConfirmationDialog(
+    userName: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title            = { Text("Delete user?") },
+        text             = { Text("\"$userName\" will be removed. You can undo this action.") },
+        confirmButton    = {
+            TextButton(onClick = onConfirm) { Text("Delete") }
+        },
+        dismissButton    = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
 // ── List item ─────────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun UserListItem(
     user: User,
     isSelected: Boolean,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -271,7 +314,11 @@ private fun UserListItem(
     ListItem(
         modifier = modifier
             .background(tileColor)
-            .clickable(enabled = !user.isPending, onClick = onClick),
+            .combinedClickable(
+                enabled     = !user.isPending,
+                onClick     = onClick,
+                onLongClick = onLongClick
+            ),
         leadingContent = {
             AvatarImage(
                 model              = user.avatarUrl,
